@@ -85,11 +85,12 @@
     <div class="stats" id="stats"></div>
     <div class="card">
       <h2>Absensi <span id="todayLabel"></span></h2>
+      <p class="muted" style="margin:-6px 0 12px">Periode berjalan: <b id="periodeLabel"></b> · saldo lembur dihitung ulang dari 0 setiap tanggal 26</p>
       <div class="row" style="margin-bottom:12px">
         <input id="searchAbsen" class="grow" placeholder="Cari nama atau ID...">
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Lembur</th><th>Saldo Lembur</th><th>Aksi</th></tr></thead>
         <tbody id="absenBody"></tbody>
       </table></div>
     </div>
@@ -120,13 +121,14 @@
     <div class="card">
       <h2>Rekap Absensi</h2>
       <div class="row" style="margin-bottom:12px">
+        <label class="f">Periode (26–25) <select id="rPeriode"></select></label>
         <label class="f">Dari <input type="date" id="rDari"></label>
         <label class="f">Sampai <input type="date" id="rSampai"></label>
         <label class="f">Kelas / Divisi <select id="rGrup"></select></label>
         <button class="btn" id="btnCsv" style="align-self:flex-end">Unduh CSV</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>ID</th><th>Nama</th><th>Hadir</th><th>Telat</th><th>Izin</th><th>Sakit</th><th>Alpa</th><th>% Hadir</th></tr></thead>
+        <thead><tr><th>ID</th><th>Nama</th><th>Hadir</th><th>Telat</th><th>Izin</th><th>Sakit</th><th>Alpa</th><th>% Hadir</th><th>Total Lembur</th></tr></thead>
         <tbody id="rekapBody"></tbody>
       </table></div>
     </div>
@@ -136,7 +138,7 @@
         <input type="date" id="hTanggal">
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Keterangan</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Lembur</th><th>Keterangan</th></tr></thead>
         <tbody id="harianBody"></tbody>
       </table></div>
     </div>
@@ -148,8 +150,10 @@
       <h2>Jam Kerja / Sekolah</h2>
       <div class="row">
         <label class="f">Batas jam masuk (lewat = Telat) <input type="time" id="setBatas"></label>
+        <label class="f">Jam pulang normal (lewat = Lembur) <input type="time" id="setPulang"></label>
         <button class="btn primary" id="btnSimpanSet" style="align-self:flex-end">Simpan</button>
       </div>
+      <p class="muted" style="margin:10px 0 0">Lembur = jam pulang aktual dikurangi jam pulang normal. Periode gaji berjalan dari tanggal 26 sampai tanggal 25 bulan berikutnya; saldo lembur otomatis mulai dari 0 di awal periode.</p>
     </div>
     <div class="card">
       <h2>Data</h2>
@@ -172,10 +176,11 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   // ---------- Penyimpanan ----------
-  let db = { anggota: [], absen: {}, setting: { batas: '08:00' } };
+  let db = { anggota: [], absen: {}, setting: { batas: '08:00', pulang: '17:00' } };
   function load() {
     try { const raw = localStorage.getItem(KEY); if (raw) db = Object.assign(db, JSON.parse(raw)); }
     catch (e) { console.warn('Gagal memuat data', e); }
+    db.setting = Object.assign({ batas: '08:00', pulang: '17:00' }, db.setting);
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(db)); }
@@ -188,6 +193,27 @@
   const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const today = () => ymd(new Date());
   const fmtTgl = (s) => new Date(s + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  // ---------- Periode 26–25 & lembur ----------
+  const BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  // Periode diberi nama sesuai bulan tanggal 25-nya (mis. 26 Nov–25 Des = "Desember").
+  function periodeDari(tgl) {
+    const [y, m, d] = tgl.split('-').map(Number);
+    let ey = y, em = m;                         // bulan akhir periode (1–12)
+    if (d >= 26) { em++; if (em > 12) { em = 1; ey++; } }
+    let sy = ey, sm = em - 1; if (sm < 1) { sm = 12; sy--; }
+    return { key: `${ey}-${pad(em)}`, mulai: `${sy}-${pad(sm)}-26`, akhir: `${ey}-${pad(em)}-25`,
+             label: `26 ${BULAN[sm - 1].slice(0, 3)} ${sy} – 25 ${BULAN[em - 1].slice(0, 3)} ${ey}`,
+             nama: `${BULAN[em - 1]} ${ey}` };
+  }
+  const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const lemburMenit = (r) => (r && r.pulang) ? Math.max(0, toMin(r.pulang) - toMin(db.setting.pulang)) : 0;
+  const fmtDur = (m) => !m ? '–' : (Math.floor(m / 60) ? Math.floor(m / 60) + 'j ' : '') + (m % 60 ? (m % 60) + 'm' : '').trim();
+  function saldoLembur(id, p) {
+    let tot = 0;
+    for (const t in db.absen) if (t >= p.mulai && t <= p.akhir) tot += lemburMenit(db.absen[t][id]);
+    return tot;
+  }
 
   function toast(msg) {
     const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -208,6 +234,7 @@
   function renderAbsen() {
     const tgl = today(); const rec = db.absen[tgl] || {};
     $('#todayLabel').textContent = '— ' + fmtTgl(tgl);
+    const per = periodeDari(tgl); $('#periodeLabel').textContent = `${per.nama} (${per.label})`;
     const q = $('#searchAbsen').value.trim().toLowerCase();
     const list = db.anggota.filter(a => !q || a.nama.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
 
@@ -222,7 +249,7 @@
     ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
     if (!db.anggota.length) {
-      $('#absenBody').innerHTML = `<tr><td colspan="5" class="empty">Belum ada anggota. Tambahkan di tab <b>Anggota</b>.</td></tr>`;
+      $('#absenBody').innerHTML = `<tr><td colspan="7" class="empty">Belum ada anggota. Tambahkan di tab <b>Anggota</b>.</td></tr>`;
       return;
     }
     $('#absenBody').innerHTML = list.map(a => {
@@ -234,6 +261,8 @@
         <td class="num">${r.masuk || '–'}</td>
         <td class="num">${r.pulang || '–'}</td>
         <td>${badge(r.status)}${r.ket ? `<div class="muted" style="font-size:.8rem">${esc(r.ket)}</div>` : ''}</td>
+        <td class="num">${fmtDur(lemburMenit(r))}</td>
+        <td class="num"><b>${fmtDur(saldoLembur(a.id, per)) === '–' ? '0' : fmtDur(saldoLembur(a.id, per))}</b></td>
         <td><div class="actions">
           <button class="btn small primary" data-act="masuk" data-id="${esc(a.id)}" ${sudahMasuk || nonHadir ? 'disabled' : ''}>Masuk</button>
           <button class="btn small" data-act="pulang" data-id="${esc(a.id)}" ${!sudahMasuk || sudahPulang ? 'disabled' : ''}>Pulang</button>
@@ -242,7 +271,7 @@
             <option value="alpa">Alpa</option><option value="reset">Reset</option>
           </select>
         </div></td></tr>`;
-    }).join('') || `<tr><td colspan="5" class="empty">Tidak ditemukan.</td></tr>`;
+    }).join('') || `<tr><td colspan="7" class="empty">Tidak ditemukan.</td></tr>`;
   }
 
   $('#absenBody').addEventListener('click', (e) => {
@@ -253,7 +282,8 @@
       r.masuk = hm(now); r.status = r.masuk > db.setting.batas ? 'telat' : 'hadir';
       toast(`Absen masuk ${r.masuk} tercatat`);
     } else if (b.dataset.act === 'pulang') {
-      r.pulang = hm(now); toast(`Absen pulang ${r.pulang} tercatat`);
+      r.pulang = hm(now); const lm = lemburMenit(r);
+      toast(`Absen pulang ${r.pulang} tercatat` + (lm ? ` · lembur ${fmtDur(lm)}` : ''));
     }
     save(); render();
   });
@@ -300,27 +330,46 @@
     const tgls = Object.keys(db.absen).filter(t => (!dari || t >= dari) && (!sampai || t <= sampai));
     return db.anggota.filter(a => !grup || a.grup === grup).map(a => {
       const c = { hadir: 0, telat: 0, izin: 0, sakit: 0, alpa: 0 };
-      tgls.forEach(t => { const st = db.absen[t][a.id]?.status; if (st) c[st]++; });
+      let lembur = 0;
+      tgls.forEach(t => { const r = db.absen[t][a.id]; if (r?.status) c[r.status]++; lembur += lemburMenit(r); });
       const total = Object.values(c).reduce((x, y) => x + y, 0);
       const pct = total ? Math.round((c.hadir + c.telat) / total * 100) : null;
-      return { ...a, ...c, pct };
+      return { ...a, ...c, pct, lembur };
     });
   }
+  function isiPeriode() {
+    const set = new Map();
+    [today(), ...Object.keys(db.absen)].forEach(t => { const p = periodeDari(t); set.set(p.key, p); });
+    const list = [...set.values()].sort((a, b) => b.key.localeCompare(a.key));
+    const cur = $('#rPeriode').value || periodeDari(today()).key;
+    $('#rPeriode').innerHTML = list.map(p => `<option value="${p.key}" ${p.key === cur ? 'selected' : ''}>${p.nama} (${p.label})</option>`).join('')
+      + `<option value="custom" ${cur === 'custom' ? 'selected' : ''}>Rentang manual</option>`;
+    return list;
+  }
+  function pilihPeriode() {
+    const k = $('#rPeriode').value; if (k === 'custom') return;
+    const p = isiPeriode().find(x => x.key === k); if (!p) return;
+    $('#rDari').value = p.mulai; $('#rSampai').value = p.akhir;
+  }
+  $('#rPeriode').addEventListener('change', () => { pilihPeriode(); renderRekap(); });
+  ['#rDari', '#rSampai'].forEach(s => $(s).addEventListener('input', () => { $('#rPeriode').value = 'custom'; }));
+
   function renderRekap() {
+    isiPeriode();
     const grups = [...new Set(db.anggota.map(a => a.grup).filter(Boolean))].sort();
     const cur = $('#rGrup').value;
     $('#rGrup').innerHTML = `<option value="">Semua</option>` + grups.map(g => `<option ${g === cur ? 'selected' : ''}>${esc(g)}</option>`).join('');
     const rows = hitungRekap();
     $('#rekapBody').innerHTML = rows.map(r => `<tr><td class="num">${esc(r.id)}</td><td>${esc(r.nama)}</td>
       <td class="num">${r.hadir}</td><td class="num">${r.telat}</td><td class="num">${r.izin}</td>
-      <td class="num">${r.sakit}</td><td class="num">${r.alpa}</td><td class="num">${r.pct == null ? '–' : r.pct + '%'}</td></tr>`).join('')
-      || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`;
+      <td class="num">${r.sakit}</td><td class="num">${r.alpa}</td><td class="num">${r.pct == null ? '–' : r.pct + '%'}</td><td class="num">${fmtDur(r.lembur)}</td></tr>`).join('')
+      || `<tr><td colspan="9" class="empty">Tidak ada data.</td></tr>`;
 
     const tgl = $('#hTanggal').value || today(); const rec = db.absen[tgl] || {};
     $('#harianBody').innerHTML = db.anggota.map(a => { const r = rec[a.id] || {};
       return `<tr><td>${esc(a.nama)}</td><td class="num">${r.masuk || '–'}</td><td class="num">${r.pulang || '–'}</td>
-        <td>${badge(r.status)}</td><td>${esc(r.ket || '')}</td></tr>`; }).join('')
-      || `<tr><td colspan="5" class="empty">Tidak ada data.</td></tr>`;
+        <td>${badge(r.status)}</td><td class="num">${fmtDur(lemburMenit(r))}</td><td>${esc(r.ket || '')}</td></tr>`; }).join('')
+      || `<tr><td colspan="6" class="empty">Tidak ada data.</td></tr>`;
   }
   ['#rDari', '#rSampai', '#rGrup', '#hTanggal'].forEach(s => $(s).addEventListener('change', renderRekap));
 
@@ -331,13 +380,14 @@
   }
   $('#btnCsv').addEventListener('click', () => {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const lines = [['ID', 'Nama', 'Kelas/Divisi', 'Hadir', 'Telat', 'Izin', 'Sakit', 'Alpa', '% Hadir'].map(q).join(',')];
-    hitungRekap().forEach(r => lines.push([r.id, r.nama, r.grup, r.hadir, r.telat, r.izin, r.sakit, r.alpa, r.pct ?? ''].map(q).join(',')));
-    download(`rekap-absen-${today()}.csv`, '﻿' + lines.join('\n'), 'text/csv');
+    const lines = [['Periode', `${$('#rDari').value} s/d ${$('#rSampai').value}`].map(q).join(','),
+      ['ID', 'Nama', 'Kelas/Divisi', 'Hadir', 'Telat', 'Izin', 'Sakit', 'Alpa', '% Hadir', 'Lembur (menit)', 'Lembur (jam)'].map(q).join(',')];
+    hitungRekap().forEach(r => lines.push([r.id, r.nama, r.grup, r.hadir, r.telat, r.izin, r.sakit, r.alpa, r.pct ?? '', r.lembur, (r.lembur / 60).toFixed(2)].map(q).join(',')));
+    download(`rekap-absen-${$('#rDari').value}_${$('#rSampai').value}.csv`, '﻿' + lines.join('\n'), 'text/csv');
   });
 
   // ---------- Pengaturan ----------
-  $('#btnSimpanSet').addEventListener('click', () => { db.setting.batas = $('#setBatas').value || '08:00'; save(); toast('Pengaturan disimpan'); });
+  $('#btnSimpanSet').addEventListener('click', () => { db.setting.batas = $('#setBatas').value || '08:00'; db.setting.pulang = $('#setPulang').value || '17:00'; save(); render(); toast('Pengaturan disimpan'); });
   $('#btnBackup').addEventListener('click', () => download(`backup-absen-${today()}.json`, JSON.stringify(db, null, 2), 'application/json'));
   $('#fileRestore').addEventListener('change', async (e) => {
     const f = e.target.files[0]; if (!f) return;
@@ -345,14 +395,14 @@
       const data = JSON.parse(await f.text());
       if (!Array.isArray(data.anggota) || typeof data.absen !== 'object') throw new Error('format');
       if (!confirm('Timpa data saat ini dengan backup?')) return;
-      db = { anggota: data.anggota, absen: data.absen, setting: data.setting || { batas: '08:00' } };
+      db = { anggota: data.anggota, absen: data.absen, setting: Object.assign({ batas: '08:00', pulang: '17:00' }, data.setting) };
       save(); render(); toast('Data dipulihkan');
     } catch { toast('File backup tidak valid'); }
     e.target.value = '';
   });
   $('#btnReset').addEventListener('click', () => {
     if (!confirm('Yakin hapus SEMUA data anggota dan absensi?')) return;
-    db = { anggota: [], absen: {}, setting: { batas: '08:00' } }; save(); render(); toast('Semua data dihapus');
+    db = { anggota: [], absen: {}, setting: { batas: '08:00', pulang: '17:00' } }; save(); render(); toast('Semua data dihapus');
   });
 
   // ---------- Jam ----------
@@ -362,11 +412,15 @@
       + ' · ' + d.toLocaleTimeString('id-ID');
   }
 
-  function render() { renderAbsen(); renderAnggota(); renderRekap(); $('#setBatas').value = db.setting.batas; }
+  function render() { renderAbsen(); renderAnggota(); renderRekap(); $('#setBatas').value = db.setting.batas; $('#setPulang').value = db.setting.pulang; }
 
   load();
-  const t = today(); const d0 = new Date(); d0.setDate(1);
-  $('#rDari').value = ymd(d0); $('#rSampai').value = t; $('#hTanggal').value = t;
+  const t = today(); const p0 = periodeDari(t);
+  $('#rDari').value = p0.mulai; $('#rSampai').value = p0.akhir; $('#hTanggal').value = t;
+  // Saat tanggal berganti ke 26, tampilan otomatis pindah ke periode baru (saldo 0).
+  let hariIni = t;
+  setInterval(() => { if (today() !== hariIni) { hariIni = today(); const p = periodeDari(hariIni);
+    $('#rPeriode').value = p.key; $('#rDari').value = p.mulai; $('#rSampai').value = p.akhir; $('#hTanggal').value = hariIni; render(); } }, 30000);
   tick(); setInterval(tick, 1000);
   render();
 })();
