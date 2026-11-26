@@ -85,10 +85,7 @@
     <div class="stats" id="stats"></div>
     <div class="card">
       <h2>Absensi <span id="todayLabel"></span></h2>
-      <div class="row" style="margin:-6px 0 12px;justify-content:space-between">
-        <span class="muted">Periode berjalan: <b id="periodeLabel"></b><br>Saldo lembur dihitung sejak: <b id="sejakLabel"></b></span>
-        <button class="btn small danger" id="btnResetLembur">Reset Saldo Lembur</button>
-      </div>
+      <p class="muted" style="margin:-6px 0 12px">Periode berjalan: <b id="periodeLabel"></b><br>Saldo lembur dihitung sejak: <b id="sejakLabel"></b> · otomatis kembali ke 0 setiap tanggal 26</p>
       <div class="row" style="margin-bottom:12px">
         <input id="searchAbsen" class="grow" placeholder="Cari nama atau ID...">
       </div>
@@ -184,6 +181,7 @@
     try { const raw = localStorage.getItem(KEY); if (raw) db = Object.assign(db, JSON.parse(raw)); }
     catch (e) { console.warn('Gagal memuat data', e); }
     db.setting = Object.assign({ batas: '08:00', pulang: '17:00' }, db.setting);
+    delete db.resetLembur; // sisa fitur reset manual lama, tidak dipakai lagi
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(db)); }
@@ -212,23 +210,13 @@
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const lemburMenit = (r) => (r && r.pulang) ? Math.max(0, toMin(r.pulang) - toMin(db.setting.pulang)) : 0;
   const fmtDur = (m) => !m ? '–' : (Math.floor(m / 60) ? Math.floor(m / 60) + 'j ' : '') + (m % 60 ? (m % 60) + 'm' : '').trim();
-  // Saldo dihitung dari awal periode (tgl 26), atau dari reset manual terakhir bila lebih baru.
+  // Saldo hanya menjumlahkan lembur di periode berjalan (tgl 26 s/d 25), jadi otomatis 0 lagi setiap tgl 26.
   function saldoLembur(id, p) {
-    const rs = db.resetLembur && db.resetLembur.tgl >= p.mulai ? db.resetLembur : null;
     let tot = 0;
-    for (const t in db.absen) {
-      if (t < p.mulai || t > p.akhir) continue;
-      if (rs && t < rs.tgl) continue;
-      const r = db.absen[t][id];
-      if (rs && t === rs.tgl && (!r?.pulang || r.pulang <= rs.jam)) continue; // pulang sebelum reset tidak dihitung
-      tot += lemburMenit(r);
-    }
+    for (const t in db.absen) if (t >= p.mulai && t <= p.akhir) tot += lemburMenit(db.absen[t][id]);
     return tot;
   }
-  function sejakText(p) {
-    const rs = db.resetLembur && db.resetLembur.tgl >= p.mulai ? db.resetLembur : null;
-    return rs ? `${fmtTgl(rs.tgl)} pukul ${rs.jam} (reset manual)` : `${fmtTgl(p.mulai)} (awal periode)`;
-  }
+  const sejakText = (p) => `${fmtTgl(p.mulai)} (awal periode)`;
 
   function toast(msg) {
     const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -315,11 +303,6 @@
     save(); render();
   });
   $('#searchAbsen').addEventListener('input', renderAbsen);
-  $('#btnResetLembur').addEventListener('click', () => {
-    if (!confirm('Reset saldo lembur semua anggota ke 0 mulai sekarang? Riwayat lembur tetap tersimpan di Rekap.')) return;
-    const now = new Date(); db.resetLembur = { tgl: ymd(now), jam: hm(now) };
-    save(); render(); toast('Saldo lembur direset ke 0');
-  });
 
   // ---------- Anggota ----------
   function renderAnggota() {

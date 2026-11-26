@@ -10,7 +10,6 @@ Aplikasi absensi sederhana berbasis web, satu file (`index.html`), tanpa server.
   (dinamai sesuai bulan tanggal 25-nya, mis. 26 Nov–25 Des = periode Desember).
 - **Lembur otomatis**: lembur = jam pulang aktual − jam pulang normal (default 17:00). Saldo lembur
   per orang dijumlahkan per periode dan otomatis mulai dari 0 lagi setiap tanggal 26.
-- **Reset saldo lembur manual**: tombol di tab Absen untuk mengembalikan saldo ke 0 kapan saja (riwayat tetap tersimpan).
 - **Rekap**: rekap per periode 26–25 (atau rentang manual) dan per kelas/divisi, persentase kehadiran, total lembur, unduh CSV (bisa dibuka di Excel).
 - **Riwayat harian** untuk tanggal mana saja.
 - **Pengaturan**: batas jam masuk, jam pulang normal, backup & pulihkan data (JSON), hapus semua data.
