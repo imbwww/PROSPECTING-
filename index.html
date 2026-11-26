@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aplikasi Absen</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1c1f24; --muted: #6b7280;
+    --border: #e3e6ea; --primary: #2563eb; --primary-text: #fff;
+    --ok: #15803d; --ok-bg: #dcfce7; --warn: #b45309; --warn-bg: #fef3c7;
+    --bad: #b91c1c; --bad-bg: #fee2e2; --info: #1d4ed8; --info-bg: #dbeafe;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111317; --card: #1a1d23; --text: #e8eaed; --muted: #9aa1ab;
+      --border: #2c3139; --primary: #3b82f6;
+      --ok: #4ade80; --ok-bg: #14301f; --warn: #fbbf24; --warn-bg: #3a2c0c;
+      --bad: #f87171; --bad-bg: #3b1414; --info: #93c5fd; --info-bg: #172554;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.45; }
+  header { padding: 20px 16px 8px; max-width: 960px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  #clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+  nav { display: flex; gap: 6px; max-width: 960px; margin: 8px auto 0; padding: 0 16px; flex-wrap: wrap; }
+  nav button { border: 1px solid var(--border); background: var(--card); color: var(--text);
+               padding: 8px 14px; border-radius: 999px; cursor: pointer; font-size: .95rem; }
+  nav button.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select { padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+                  background: var(--bg); color: var(--text); font-size: .95rem; min-width: 0; }
+  .grow { flex: 1 1 180px; }
+  .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card);
+         color: var(--text); cursor: pointer; font-size: .9rem; white-space: nowrap; }
+  .btn.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  .btn.small { padding: 5px 10px; font-size: .82rem; }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .stat .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { color: var(--muted); font-size: .85rem; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .b-hadir { background: var(--ok-bg); color: var(--ok); }
+  .b-telat { background: var(--warn-bg); color: var(--warn); }
+  .b-izin, .b-sakit { background: var(--info-bg); color: var(--info); }
+  .b-alpa { background: var(--bad-bg); color: var(--bad); }
+  .b-belum { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+  .muted { color: var(--muted); }
+  .empty { text-align: center; color: var(--muted); padding: 24px 8px; }
+  .hidden { display: none; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+           padding: 10px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  #toast.show { opacity: 1; }
+  label.f { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Aplikasi Absen</h1>
+  <div id="clock"></div>
+</header>
+<nav>
+  <button data-tab="absen" class="active">Absen Hari Ini</button>
+  <button data-tab="anggota">Anggota</button>
+  <button data-tab="rekap">Rekap</button>
+  <button data-tab="pengaturan">Pengaturan</button>
+</nav>
+
+<main>
+  <!-- ABSEN -->
+  <section id="tab-absen">
+    <div class="stats" id="stats"></div>
+    <div class="card">
+      <h2>Absensi <span id="todayLabel"></span></h2>
+      <div class="row" style="margin-bottom:12px">
+        <input id="searchAbsen" class="grow" placeholder="Cari nama atau ID...">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody id="absenBody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ANGGOTA -->
+  <section id="tab-anggota" class="hidden">
+    <div class="card">
+      <h2>Tambah Anggota</h2>
+      <form id="formAnggota" class="row">
+        <input id="inId" placeholder="ID / NIS / NIP" style="flex:0 1 140px" required>
+        <input id="inNama" class="grow" placeholder="Nama lengkap" required>
+        <input id="inGrup" placeholder="Kelas / Divisi" style="flex:0 1 160px">
+        <button class="btn primary" type="submit">Tambah</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Daftar Anggota (<span id="countAnggota">0</span>)</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Nama</th><th>Kelas / Divisi</th><th></th></tr></thead>
+        <tbody id="anggotaBody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- REKAP -->
+  <section id="tab-rekap" class="hidden">
+    <div class="card">
+      <h2>Rekap Absensi</h2>
+      <div class="row" style="margin-bottom:12px">
+        <label class="f">Dari <input type="date" id="rDari"></label>
+        <label class="f">Sampai <input type="date" id="rSampai"></label>
+        <label class="f">Kelas / Divisi <select id="rGrup"></select></label>
+        <button class="btn" id="btnCsv" style="align-self:flex-end">Unduh CSV</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Nama</th><th>Hadir</th><th>Telat</th><th>Izin</th><th>Sakit</th><th>Alpa</th><th>% Hadir</th></tr></thead>
+        <tbody id="rekapBody"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>Riwayat Harian</h2>
+      <div class="row" style="margin-bottom:12px">
+        <input type="date" id="hTanggal">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nama</th><th>Masuk</th><th>Pulang</th><th>Status</th><th>Keterangan</th></tr></thead>
+        <tbody id="harianBody"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- PENGATURAN -->
+  <section id="tab-pengaturan" class="hidden">
+    <div class="card">
+      <h2>Jam Kerja / Sekolah</h2>
+      <div class="row">
+        <label class="f">Batas jam masuk (lewat = Telat) <input type="time" id="setBatas"></label>
+        <button class="btn primary" id="btnSimpanSet" style="align-self:flex-end">Simpan</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Data</h2>
+      <p class="muted" style="margin-top:0">Data disimpan di browser perangkat ini. Lakukan backup secara berkala.</p>
+      <div class="row">
+        <button class="btn" id="btnBackup">Backup (JSON)</button>
+        <label class="btn">Pulihkan dari Backup<input type="file" id="fileRestore" accept=".json" hidden></label>
+        <button class="btn danger" id="btnReset">Hapus Semua Data</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const KEY = 'aplikasi-absen-v1';
+  const STATUS = { hadir: 'Hadir', telat: 'Telat', izin: 'Izin', sakit: 'Sakit', alpa: 'Alpa' };
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // ---------- Penyimpanan ----------
+  let db = { anggota: [], absen: {}, setting: { batas: '08:00' } };
+  function load() {
+    try { const raw = localStorage.getItem(KEY); if (raw) db = Object.assign(db, JSON.parse(raw)); }
+    catch (e) { console.warn('Gagal memuat data', e); }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(db)); }
+    catch (e) { toast('Gagal menyimpan data di browser ini'); }
+  }
+
+  // ---------- Util tanggal ----------
+  const pad = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const today = () => ymd(new Date());
+  const fmtTgl = (s) => new Date(s + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  const dayRec = (tgl) => (db.absen[tgl] ||= {});
+  const badge = (st) => st ? `<span class="badge b-${st}">${STATUS[st]}</span>` : `<span class="badge b-belum">Belum absen</span>`;
+
+  // ---------- Tab ----------
+  document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('main > section').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + b.dataset.tab));
+    render();
+  }));
+
+  // ---------- Absen hari ini ----------
+  function renderAbsen() {
+    const tgl = today(); const rec = db.absen[tgl] || {};
+    $('#todayLabel').textContent = '— ' + fmtTgl(tgl);
+    const q = $('#searchAbsen').value.trim().toLowerCase();
+    const list = db.anggota.filter(a => !q || a.nama.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
+
+    const c = { total: db.anggota.length, hadir: 0, telat: 0, izin: 0, belum: 0 };
+    db.anggota.forEach(a => {
+      const st = rec[a.id]?.status;
+      if (st === 'hadir') c.hadir++; else if (st === 'telat') c.telat++;
+      else if (st === 'izin' || st === 'sakit') c.izin++; else if (!st) c.belum++;
+    });
+    $('#stats').innerHTML = [
+      ['Total', c.total], ['Hadir', c.hadir], ['Telat', c.telat], ['Izin/Sakit', c.izin], ['Belum absen', c.belum]
+    ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+    if (!db.anggota.length) {
+      $('#absenBody').innerHTML = `<tr><td colspan="5" class="empty">Belum ada anggota. Tambahkan di tab <b>Anggota</b>.</td></tr>`;
+      return;
+    }
+    $('#absenBody').innerHTML = list.map(a => {
+      const r = rec[a.id] || {};
+      const sudahMasuk = !!r.masuk, sudahPulang = !!r.pulang;
+      const nonHadir = r.status && !r.masuk;
+      return `<tr>
+        <td><b>${esc(a.nama)}</b><div class="muted" style="font-size:.8rem">${esc(a.id)}${a.grup ? ' · ' + esc(a.grup) : ''}</div></td>
+        <td class="num">${r.masuk || '–'}</td>
+        <td class="num">${r.pulang || '–'}</td>
+        <td>${badge(r.status)}${r.ket ? `<div class="muted" style="font-size:.8rem">${esc(r.ket)}</div>` : ''}</td>
+        <td><div class="actions">
+          <button class="btn small primary" data-act="masuk" data-id="${esc(a.id)}" ${sudahMasuk || nonHadir ? 'disabled' : ''}>Masuk</button>
+          <button class="btn small" data-act="pulang" data-id="${esc(a.id)}" ${!sudahMasuk || sudahPulang ? 'disabled' : ''}>Pulang</button>
+          <select data-act="status" data-id="${esc(a.id)}" style="padding:5px 6px;font-size:.82rem">
+            <option value="">Lainnya…</option><option value="izin">Izin</option><option value="sakit">Sakit</option>
+            <option value="alpa">Alpa</option><option value="reset">Reset</option>
+          </select>
+        </div></td></tr>`;
+    }).join('') || `<tr><td colspan="5" class="empty">Tidak ditemukan.</td></tr>`;
+  }
+
+  $('#absenBody').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const rec = dayRec(today()); const id = b.dataset.id; const now = new Date();
+    const r = rec[id] ||= {};
+    if (b.dataset.act === 'masuk') {
+      r.masuk = hm(now); r.status = r.masuk > db.setting.batas ? 'telat' : 'hadir';
+      toast(`Absen masuk ${r.masuk} tercatat`);
+    } else if (b.dataset.act === 'pulang') {
+      r.pulang = hm(now); toast(`Absen pulang ${r.pulang} tercatat`);
+    }
+    save(); render();
+  });
+  $('#absenBody').addEventListener('change', (e) => {
+    const s = e.target.closest('select[data-act="status"]'); if (!s || !s.value) return;
+    const rec = dayRec(today()); const id = s.dataset.id;
+    if (s.value === 'reset') {
+      if (confirm('Hapus absensi hari ini untuk anggota ini?')) delete rec[id];
+    } else {
+      const ket = s.value === 'alpa' ? '' : (prompt('Keterangan (opsional):') || '');
+      rec[id] = { status: s.value, ket };
+    }
+    save(); render();
+  });
+  $('#searchAbsen').addEventListener('input', renderAbsen);
+
+  // ---------- Anggota ----------
+  function renderAnggota() {
+    $('#countAnggota').textContent = db.anggota.length;
+    $('#anggotaBody').innerHTML = db.anggota.map(a => `<tr>
+      <td class="num">${esc(a.id)}</td><td>${esc(a.nama)}</td><td>${esc(a.grup || '–')}</td>
+      <td><button class="btn small danger" data-hapus="${esc(a.id)}">Hapus</button></td></tr>`).join('')
+      || `<tr><td colspan="4" class="empty">Belum ada anggota.</td></tr>`;
+  }
+  $('#formAnggota').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = $('#inId').value.trim(), nama = $('#inNama').value.trim(), grup = $('#inGrup').value.trim();
+    if (!id || !nama) return;
+    if (db.anggota.some(a => a.id === id)) { toast('ID sudah dipakai'); return; }
+    db.anggota.push({ id, nama, grup });
+    db.anggota.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+    save(); e.target.reset(); $('#inId').focus(); toast('Anggota ditambahkan'); render();
+  });
+  $('#anggotaBody').addEventListener('click', (e) => {
+    const id = e.target.dataset.hapus; if (!id) return;
+    const a = db.anggota.find(x => x.id === id);
+    if (!confirm(`Hapus ${a.nama}? Riwayat absennya tetap tersimpan.`)) return;
+    db.anggota = db.anggota.filter(x => x.id !== id); save(); render();
+  });
+
+  // ---------- Rekap ----------
+  function hitungRekap() {
+    const dari = $('#rDari').value, sampai = $('#rSampai').value, grup = $('#rGrup').value;
+    const tgls = Object.keys(db.absen).filter(t => (!dari || t >= dari) && (!sampai || t <= sampai));
+    return db.anggota.filter(a => !grup || a.grup === grup).map(a => {
+      const c = { hadir: 0, telat: 0, izin: 0, sakit: 0, alpa: 0 };
+      tgls.forEach(t => { const st = db.absen[t][a.id]?.status; if (st) c[st]++; });
+      const total = Object.values(c).reduce((x, y) => x + y, 0);
+      const pct = total ? Math.round((c.hadir + c.telat) / total * 100) : null;
+      return { ...a, ...c, pct };
+    });
+  }
+  function renderRekap() {
+    const grups = [...new Set(db.anggota.map(a => a.grup).filter(Boolean))].sort();
+    const cur = $('#rGrup').value;
+    $('#rGrup').innerHTML = `<option value="">Semua</option>` + grups.map(g => `<option ${g === cur ? 'selected' : ''}>${esc(g)}</option>`).join('');
+    const rows = hitungRekap();
+    $('#rekapBody').innerHTML = rows.map(r => `<tr><td class="num">${esc(r.id)}</td><td>${esc(r.nama)}</td>
+      <td class="num">${r.hadir}</td><td class="num">${r.telat}</td><td class="num">${r.izin}</td>
+      <td class="num">${r.sakit}</td><td class="num">${r.alpa}</td><td class="num">${r.pct == null ? '–' : r.pct + '%'}</td></tr>`).join('')
+      || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`;
+
+    const tgl = $('#hTanggal').value || today(); const rec = db.absen[tgl] || {};
+    $('#harianBody').innerHTML = db.anggota.map(a => { const r = rec[a.id] || {};
+      return `<tr><td>${esc(a.nama)}</td><td class="num">${r.masuk || '–'}</td><td class="num">${r.pulang || '–'}</td>
+        <td>${badge(r.status)}</td><td>${esc(r.ket || '')}</td></tr>`; }).join('')
+      || `<tr><td colspan="5" class="empty">Tidak ada data.</td></tr>`;
+  }
+  ['#rDari', '#rSampai', '#rGrup', '#hTanggal'].forEach(s => $(s).addEventListener('change', renderRekap));
+
+  function download(name, content, type) {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  $('#btnCsv').addEventListener('click', () => {
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['ID', 'Nama', 'Kelas/Divisi', 'Hadir', 'Telat', 'Izin', 'Sakit', 'Alpa', '% Hadir'].map(q).join(',')];
+    hitungRekap().forEach(r => lines.push([r.id, r.nama, r.grup, r.hadir, r.telat, r.izin, r.sakit, r.alpa, r.pct ?? ''].map(q).join(',')));
+    download(`rekap-absen-${today()}.csv`, '﻿' + lines.join('\n'), 'text/csv');
+  });
+
+  // ---------- Pengaturan ----------
+  $('#btnSimpanSet').addEventListener('click', () => { db.setting.batas = $('#setBatas').value || '08:00'; save(); toast('Pengaturan disimpan'); });
+  $('#btnBackup').addEventListener('click', () => download(`backup-absen-${today()}.json`, JSON.stringify(db, null, 2), 'application/json'));
+  $('#fileRestore').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      if (!Array.isArray(data.anggota) || typeof data.absen !== 'object') throw new Error('format');
+      if (!confirm('Timpa data saat ini dengan backup?')) return;
+      db = { anggota: data.anggota, absen: data.absen, setting: data.setting || { batas: '08:00' } };
+      save(); render(); toast('Data dipulihkan');
+    } catch { toast('File backup tidak valid'); }
+    e.target.value = '';
+  });
+  $('#btnReset').addEventListener('click', () => {
+    if (!confirm('Yakin hapus SEMUA data anggota dan absensi?')) return;
+    db = { anggota: [], absen: {}, setting: { batas: '08:00' } }; save(); render(); toast('Semua data dihapus');
+  });
+
+  // ---------- Jam ----------
+  function tick() {
+    const d = new Date();
+    $('#clock').textContent = d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      + ' · ' + d.toLocaleTimeString('id-ID');
+  }
+
+  function render() { renderAbsen(); renderAnggota(); renderRekap(); $('#setBatas').value = db.setting.batas; }
+
+  load();
+  const t = today(); const d0 = new Date(); d0.setDate(1);
+  $('#rDari').value = ymd(d0); $('#rSampai').value = t; $('#hTanggal').value = t;
+  tick(); setInterval(tick, 1000);
+  render();
+})();
+</script>
+</body>
+</html>
